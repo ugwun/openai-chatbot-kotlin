@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title th:text="${@environment.getProperty('chat.html_title')}">Chatbot</title>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/lib/marked.js"></script>
+    <style>
+        .chat-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            border: 1px solid #ccc;
+            background-color: #f8f8f8;
+            height: 500px;
+            overflow-y: scroll;
+        }
+        .message {
+            margin-bottom: 10px;
+        }
+        .code {
+            padding: 10px;
+            background-color: #f0f0f0;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1 class="text-center mt-5" th:text="${@environment.getProperty('chat.h1_title')}">Chatbot</h1>
+    <div class="chat-container" id="chat-container">
+        <div th:each="message : ${messages}" class="message" th:classappend="${message.role} == 'user' ? 'user' : 'bot'">
+            <strong th:text="${message.role} == 'user' ? 'User: ' : 'Chatbot: '"></strong>
+            <span th:utext="${message.content}"></span>
+        </div>
+    </div>
+    <div class="input-group mt-3">
+        <input type="text" class="form-control" id="user-input" placeholder="Type your message...">
+        <input type="text" class="form-control" id="uuid-input" placeholder="Enter UUID to load conversation...">
+        <div class="input-group-append">
+            <button class="btn btn-primary" id="send-button">Send</button>
+            <button class="btn btn-secondary" id="load-button">Load</button>
+            <button class="btn btn-danger" id="clear-button">Clear</button>
+        </div>
+    </div>
+</div>
+<script>
+        const chatContainer = document.getElementById('chat-container');
+        const userInput = document.getElementById('user-input');
+        const uuidInput = document.getElementById('uuid-input');
+        const sendButton = document.getElementById('send-button');
+        const loadButton = document.getElementById('load-button');
+
+        let uuid = null;
+        let messages = [];
+
+        function appendMessage(content, sender) {
+            const message = document.createElement('div');
+            message.classList.add('message', sender);
+
+            const label = document.createElement('strong');
+            label.textContent = sender === 'user' ? 'User: ' : 'Chatbot: ';
+            message.appendChild(label);
+
+            const text = document.createElement('span');
+            text.innerHTML = marked.parse(content);
+            message.appendChild(text);
+
+            chatContainer.appendChild(message);
+        }
+
+        function sendMessage() {
+            const input = userInput.value.trim();
+            if (input.length === 0) return;
+
+            appendMessage(input, 'user');
+            userInput.value = '';
+
+            messages.push({role: 'USER', content: input});
+
+            fetch('/chat/api', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ uuid: uuid, messages: messages })
+            })
+            .then(response => response.json())
+            .then(data => {
+                const content = data.messages[data.messages.length - 1].content;
+                appendMessage(content, 'bot');
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+
+                messages.push({role: 'ASSISTANT', content: content});
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
+        }
+
+        function clearConversation() {
+            chatContainer.innerHTML = '';
+            messages = [];
+            uuid = null;
+        }
+
+        function loadConversation() {
+            const inputUuid = uuidInput.value.trim();
+            if (inputUuid.length === 0) return;
+
+            fetch(`/chat/load/${inputUuid}`)
+                .then(response => response.json())
+                .then(data => {
+                    clearConversation();
+
+                    uuid = data.uuid;
+                    messages = data.messages.filter(message => message.role !== 'system');
+
+                    messages.forEach(message => {
+                        appendMessage(message.content, message.role === 'user' ? 'user' : 'bot');
+                    });
+
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                });
+        }
+
+        sendButton.addEventListener('click', sendMessage);
+        userInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        loadButton.addEventListener('click', loadConversation);
+        uuidInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                loadConversation();
+            }
+        });
+
+        const clearButton = document.getElementById('clear-button');
+        clearButton.addEventListener('click', clearConversation);
+</script>
+</body>
+</html>
